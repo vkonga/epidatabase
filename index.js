@@ -1,6 +1,8 @@
 const express = require('express')
 const {open} = require('sqlite')
 const sqlite3 = require('sqlite3')
+const bcrypt = require("bcrypt")
+const jwt = require("jsonwebtoken")
 const path = require('path')
 
 const dbPath = path.join(__dirname, 'tasksdb.db')
@@ -24,18 +26,90 @@ const initializeDBAndServer = async () => {
   }
 }
 
-initializeDBAndServer()
+initializeDBAndServer();
 
-app.get('/tasks/', async (request, response) => {
-  const getTaskQuery = `
-    SELECT * FROM tasks;
-  `
+const authenticateToken = (request,response,next) => {
+    let jwtToken;
+    const authHeader = request.headers["authorization"];
+    if(authHeader != undefined) {
+        jwtToken = authHeader.split(" ")[1];
+    }
 
-  const tasksQuery = await db.all(getTaskQuery)
-  response.send(tasksQuery)
+    if(jwtToken === undefined) {
+        response.status(401);
+        response.send("Invalid Access token")
+
+
+    }
+    else {
+        jwt.verify(jwtToken,ertyuioiugfdfjkiuytrd, async (error, user) => {
+            if(error) {
+                    response.status(401);
+                    response.send("Invalid Access Token")
+            } else {
+                next();
+                    }
+                })
+            }
+    
+}
+
+app.post("/users/",async (request,response) => {
+    const {username,password} = request.body;
+    const hashedPassword = await bcrypt.hash(password,10);
+    const selectUserQuery = `SELECT * FROM user WHERE username='${username}'`;
+    const dbUser = await db.get(selectUserQuery);
+    if(dbUser === undefined) {
+        const createUserQuery = `
+        INSERT INTO
+            user (username,password)
+        VALUES (
+            '${username}',
+            '${hashedPassword}'
+        );
+
+        `;
+        await db.run(createUserQuery);
+        response.send("USer created succeful")
+    }
+    else {
+        response.status(400);
+        response.send("User already exists");
+    }
 })
 
-app.get('/tasks/:taskId', async (request, response) => {
+app.post("/login/", async (request, response) => {
+    const {username,password} = request.body;
+    const selectUserQuery = `SELECT * FROM user WHERE username='${username}'`;
+    const dbUser = await db.get(selectUserQuery);
+
+    if(dbUser === undefined){
+        response.status(400);
+        response.send("Invalid user");
+    }else {
+        const isPassowrdMatched = await bcrypt.compare(password,dbUser.password)
+        if (isPassowrdMatched === true){
+            const payload = {username:username}
+            const jwtToken = jwt.sign(payload, "ertyuioiugfdfjkiuytrd")
+            response.send({jwtToken});
+        } else {
+
+            response.send("Invalid Password")
+        }
+    } 
+})
+
+app.get('/tasks/',authenticateToken ,async (request, response) => {
+             const getTaskQuery = `
+            SELECT * FROM tasks;
+                `
+
+                const tasksQuery = await db.all(getTaskQuery)
+                 response.send(tasksQuery)
+  
+})
+
+app.get('/tasks/:taskId', authenticateToken,async (request, response) => {
   const {taskId} = request.params
   const getTaskQuery = `
     SELECT * FROM tasks
@@ -45,7 +119,7 @@ app.get('/tasks/:taskId', async (request, response) => {
   response.send(tasksQuery)
 })
 
-app.get('/tasks/:taskId/eachtasks/', async (request, response) => {
+app.get('/tasks/:taskId/eachtasks/', authenticateToken,async (request, response) => {
   const {taskId} = request.params
   const getTaskQuery = `
     SELECT * FROM eachtasks
@@ -56,7 +130,7 @@ app.get('/tasks/:taskId/eachtasks/', async (request, response) => {
   response.send(tasksQuery)
 })
 
-app.post('/tasks/', async (request, response) => {
+app.post('/tasks/', authenticateToken,async (request, response) => {
   const {user} = request.body
   const addTaskQuery = `
     INSERT INTO 
@@ -69,7 +143,7 @@ app.post('/tasks/', async (request, response) => {
   response.send('Successfully added')
 })
 
-app.put('/tasks/:taskId', async (request, response) => {
+app.put('/tasks/:taskId', authenticateToken,async (request, response) => {
   const {user} = request.body
   const {taskId} = request.params
   const updateTaskQuery = `
@@ -81,7 +155,7 @@ app.put('/tasks/:taskId', async (request, response) => {
   response.send('succefully updated')
 })
 
-app.post('/tasks/:taskId/eachtasks/', async (request, response) => {
+app.post('/tasks/:taskId/eachtasks/', authenticateToken,async (request, response) => {
   const {taskName, taskDescription, taskStatus, taskDue} = request.body
   const {taskId} = request.params
   const addTasksQuery = `
@@ -97,7 +171,7 @@ app.post('/tasks/:taskId/eachtasks/', async (request, response) => {
   response.send('successfully added')
 })
 
-app.put('/tasks/:taskId/eachtasks/:id', async (request, response) => {
+app.put('/tasks/:taskId/eachtasks/:id', authenticateToken,async (request, response) => {
   const {id, taskId} = request.params
   const {taskName, taskDescription, taskStatus, taskDue} = request.body
   const updateTaskQuery = `
